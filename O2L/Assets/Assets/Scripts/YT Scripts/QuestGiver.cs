@@ -4,56 +4,67 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
-/// プレイヤーに対してクエストを提示し、受注の処理を行うクラス
+/// NPCなどにアタッチし、プレイヤーにクエストを提示・発行するクラス
 public class QuestGiver : MonoBehaviour
 {
+    // 発行するクエストの情報
     public Quest quest;
+
+    // クエストを受け取るプレイヤーへの参照
     public PLAYER player;
 
-    [Header("UI Elements")]
-    public GameObject questWindow;
-    public TextMeshProUGUI titleText;
-    public TextMeshProUGUI descriptionText;
-    public TextMeshProUGUI scoreText;
-    public TextMeshProUGUI rewardText;
+    [Header("UI要素")]
+    public GameObject questWindow;          // クエスト情報の表示ウィンドウ
+    public TextMeshProUGUI titleText;       // クエスト名のテキスト
+    public TextMeshProUGUI descriptionText; // 説明文のテキスト
+    public TextMeshProUGUI scoreText;       // 獲得スコアの表示テキスト
+    public TextMeshProUGUI rewardText;      // 報酬内容の表示テキスト
 
+    /// ゲーム開始時の初期化
     void Awake()
     {
-        // 意図せぬタイミングでUIが表示されるのを防ぐため初期状態で非表示にする
+        // 最初はクエストウィンドウを閉じておく
         if (questWindow != null)
         {
             questWindow.SetActive(false);
         }
     }
 
+    /// プレイヤーがNPCの周囲（トリガー）に入った時の処理
     void OnTriggerEnter(Collider other)
     {
+        // 接触したのがプレイヤーであればウィンドウを開く
         if (other.CompareTag("Player"))
         {
             OpenQuestWindow();
         }
     }
 
-    /// クエストUIに必要な情報を反映させて画面に表示する
+    /// クエストの内容をUIに反映させて表示する
     public void OpenQuestWindow()
     {
-        // UIコンポーネントの未割り当てによるNullReferenceExceptionを防ぐ
-        if (quest == null || titleText == null || descriptionText == null || scoreText == null || questWindow == null)
-        {
-            return;
-        }
+        // --- ヌルポ (NullReferenceException) 対策 ---
+        // Inspectorでアタッチし忘れているものがないか、実行時に分かりやすく警告を出します。
+        // これを入れることで、今後エラーが起きた際にどこが原因か一瞬で分かるようになります。
+        if (quest == null) { return; }
+        if (titleText == null) { return; }
+        if (descriptionText == null) { return; }
+        if (scoreText == null) { return; }
+        if (questWindow == null) { return; }
+        // ---------------------------------------------
 
+        // クエストのデータをUIテキストに流し込む
         titleText.text = quest.title;
         descriptionText.text = quest.description;
-        scoreText.text = quest.score.ToString();
-        // rewardText.text = quest.reward.ToString();
+        scoreText.text = quest.Score.ToString();
+        // rewardText.text = quest.Reward.ToString(); // 報酬表示が必要な場合
 
-        // プレイヤーがUIのボタンをクリックできるようにカーソルを解放する
+        // UI操作のためにマウスカーソルを表示し、範囲内に固定する
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.Confined;
 
-        // 既に受注済みのクエストを再度受けられないようにする
-        if (quest.isActive)
+        // すでにクエストを受注済みの場合は、ウィンドウを表示しない
+        if (quest.isActive == true)
         {
             questWindow.SetActive(false);
         }
@@ -63,30 +74,30 @@ public class QuestGiver : MonoBehaviour
         }
     }
 
-    /// 繧ｯ繧ｨ繧ｹ繝亥女豕ｨ繝懊ち繝ｳ縺梧款縺輔ｌ縺滓凾縺ｮ蜃ｦ逅・
+    /// クエスト受注ボタンが押された時の処理
     public void AcceptQuest()
     {
-        // 繝励Ξ繧､繝､繝ｼ縺ｮ蜿ら・縺梧ｼ上ｌ縺ｦ縺・ｋ蝣ｴ蜷医ｂ繧ｨ繝ｩ繝ｼ繧貞・縺励※蜃ｦ逅・ｒ荳ｭ譁ｭ縺励∪縺・
+        // プレイヤーの参照が漏れている場合もエラーを出して処理を中断します
         if (player == null)
         {
             return;
         }
 
-        // 繧ｦ繧｣繝ｳ繝峨え繧帝哩縺倥ｋ
-        // 窶ｻ Unity縺ｮ莉墓ｧ倅ｸ翫√が繝悶ず繧ｧ繧ｯ繝育ｴ譽・凾縺ｮ謖吝虚縺ｮ驛ｽ蜷医〒縲・.縲阪ｈ繧翫ｂ縲・= null縲阪・譁ｹ縺悟ｮ牙・縺ｧ縺・
+        // ウィンドウを閉じる
+        // ※ Unityの仕様上、オブジェクト破棄時の挙動の都合で「?.」よりも「!= null」の方が安全です
         if (questWindow != null)
         {
             questWindow.SetActive(false);
         }
 
-        // 繧ｯ繧ｨ繧ｹ繝医ｒ縲碁ｲ陦御ｸｭ縲咲憾諷九↓縺吶ｋ
+        // クエストを「進行中」状態にする
         quest.isActive = true;
 
-        // 繝励Ξ繧､繝､繝ｼ蛛ｴ縺ｫ縺薙・繧ｯ繧ｨ繧ｹ繝医ｒ逋ｻ骭ｲ縺励∬ｿｽ霍｡繧帝幕蟋九＆縺帙ｋ
+        // プレイヤー側にこのクエストを登録し、追跡を開始させる
         player.quest = quest;
     }
 
-    /// 繝励Ξ繧､繝､繝ｼ縺碁屬繧後◆繧芽・蜍慕噪縺ｫ繧ｦ繧｣繝ｳ繝峨え繧帝哩縺倥ｋ
+    /// プレイヤーが離れたら自動的にウィンドウを閉じる
     void OnTriggerExit(Collider other)
     {
         if (other.CompareTag("Player"))
@@ -98,7 +109,7 @@ public class QuestGiver : MonoBehaviour
         }
     }
 
-    /// 髢峨§繧九・繧ｿ繝ｳ縺ｪ縺ｩ縺ｧ謇句虚縺ｧ繧ｦ繧｣繝ｳ繝峨え繧帝哩縺倥ｋ蜃ｦ逅・
+    /// 閉じるボタンなどで手動でウィンドウを閉じる処理
     public void Close()
     {
         if (questWindow != null)

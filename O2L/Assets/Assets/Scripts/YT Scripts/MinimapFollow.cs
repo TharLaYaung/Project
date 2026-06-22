@@ -2,31 +2,32 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// ミニマップのカメラをプレイヤーに追従させ、俯瞰視点を維持するクラス
+
+
+/// ミニマップカメラの位置と回転を制御し、
+/// プレイヤーを上空から追従させるスクリプトです。
+
 public class MinimapFollow : MonoBehaviour
 {
-    private const float CAMERA_DOWNWARD_ANGLE = 90f;
-
     [Header("ターゲット設定")]
-    [Tooltip("カメラが追従するプレイヤーまたはオブジェクトを指定します")]
+    [Tooltip("カメラが追従するプレイヤーまたはオブジェクトを指定します。")]
     public Transform playerTarget;
 
-    [Tooltip("プレイヤーからの垂直方向の高さ（距離）です")]
+    [Tooltip("プレイヤーからの垂直方向の高さ（距離）です。")]
     public float heightOffset = 10f;
 
     [Header("回転設定")]
-    [Tooltip("プレイヤーのY軸回転に合わせてミニマップも回転させるかどうか")]
+    [Tooltip("プレイヤーのY軸回転に合わせてミニマップも回転させるかどうか。")]
     public bool rotateWithPlayer = true;
 
     [Header("スムージング（滑らかさ）")]
-    [Tooltip("オンにすると、カメラの動きがより滑らかになります")]
+    [Tooltip("オンにすると、カメラの動きがより滑らかになります。")]
     public bool useSmoothing = false;
     public float smoothSpeed = 0.125f;
 
-    // 入力: なし, 出力: なし, 副作用: プレイヤーオブジェクトの検索と設定
     private void Start()
     {
-        // 開発者がインスペクターで設定し忘れた場合でも自動でプレイヤーを追従対象にするため
+        // ターゲットが未設定の場合、"Player"タグの付いたオブジェクトを自動検索します。
         if (playerTarget == null)
         {
             GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
@@ -34,20 +35,28 @@ public class MinimapFollow : MonoBehaviour
             {
                 playerTarget = playerObj.transform;
             }
+            else
+            {
+                // Debug.LogWarning("MinimapFollow: ターゲットが未設定で、'Player'タグのオブジェクトも見つかりません。");
+            }
         }
     }
 
-    // 入力: なし, 出力: なし, 副作用: カメラの位置と回転の更新
+    /// <summary>
+    /// LateUpdateを使用することで、プレイヤーの移動完了後に
+    /// カメラの位置を更新し、ガタつきを防ぎます。
+    /// </summary>
     private void LateUpdate()
     {
         if (playerTarget == null) return;
 
         try
         {
+            // プレイヤーの位置に基づいた新しい座標を計算
             Vector3 newPosition = playerTarget.position;
             newPosition.y += heightOffset;
 
-            // プレイヤーの動きに対してカメラが遅れて追従するような演出を加えるため
+            // カメラの位置を適用
             if (useSmoothing)
             {
                 transform.position = Vector3.Lerp(transform.position, newPosition, smoothSpeed);
@@ -57,20 +66,19 @@ public class MinimapFollow : MonoBehaviour
                 transform.position = newPosition;
             }
 
-            // プレイヤーの向いている方向を常にミニマップの上方向にするため
             if (rotateWithPlayer)
             {
-                transform.rotation = Quaternion.Euler(CAMERA_DOWNWARD_ANGLE, playerTarget.eulerAngles.y, 0f);
+                // プレイヤーのY軸回転に追従しつつ、X軸は真下(90度)を固定
+                transform.rotation = Quaternion.Euler(90f, playerTarget.eulerAngles.y, 0f);
             }
             else
             {
-                // 方角を固定し、絶対的な位置関係を把握しやすくするため
-                transform.rotation = Quaternion.Euler(CAMERA_DOWNWARD_ANGLE, 0f, 0f);
+                // 北を固定したトップダウン表示
+                transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             }
         }
-        catch (System.Exception)
+        catch (System.Exception ex)
         {
-            // 予期せぬエラーでカメラ更新が停止した場合の調査用（現在はコメントアウト）
             // Debug.LogError($"MinimapFollow エラー: {ex.Message}");
         }
     }

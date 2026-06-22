@@ -5,17 +5,19 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 
-/// プレイヤーの武装や所持アイテムの状況を追跡・更新し、システム全体で共有できるようにします。
+/// 武器、弾薬、投擲物などのプレイヤーの装備全体を管理するマネージャークラス
+/// シングルトンパターンを採用し、武器の持ち替えやアイテムの拾得を制御します
+
 public class WeaponManager : MonoBehaviour
 {
     // シングルトンインスタンス
     public static WeaponManager Instance { get; set; }
 
     [Header("武器スロットの設定")]
-    public List<GameObject> weaponSlots;     // 武器を格納するスロットのリスト
+    public List<GameObject> weaponSlots;     // 武器を格納するスロット（1番、2番など）
     public GameObject activeWeaponSlot;      // 現在選択されているアクティブなスロット
 
-    [Header("アイテム(回復薬など)")]
+    [Header("アイテム（回復薬など）")]
     public int totalItem = 0;                // 所持しているアイテムの総数
 
     [Header("弾薬管理")]
@@ -25,31 +27,28 @@ public class WeaponManager : MonoBehaviour
     public int totalSniperAmmo = 0;          // スナイパー弾の総数
     public int totalLmgAmmo = 0;             // LMG弾の総数
 
-    [Header("投擲物の発射設定")]
-    public float throwForce = 5f;            // 基本の投擲力
-    public float tacticalThrowForce = 5f;    // タクティカル用の投擲力
-    public GameObject grenadePrefab;         // 投擲弾のプレハブ
-    public GameObject throwableSpawn;        // 投擲物を生成する場所（プレイヤーの視点など）
+    [Header("投擲物の共通設定")]
+    public float throwForce = 5f;            // 基本の投げる力
+    public float tacticalThrowForce = 5f;    // タクティカル用の投げる力
+    public GameObject grenadePrefab;         // 手榴弾のプレハブ
+    public GameObject throwableSpawn;        // 投擲物を生成する位置（プレイヤーの手元など）
     public float forceMultiplier = 1;        // 長押しなどによる力の倍率
     public float forceMultiplierLimit = 2f;  // 力の最大倍率
 
-    [Header("レサール(殺傷用投擲物)")]
+    [Header("リーサル（殺傷用投擲物）")]
     public int maxLethals = 4;               // 最大所持数
     public int lethalsCount = 0;             // 現在の所持数
     public Throwable.ThrowableType equippedLethalType; // 装備中の種類
 
-    [Header("タクティカル(補助用投擲物)")]
+    [Header("タクティカル（補助用投擲物）")]
     public int maxTacticals = 3;             // 最大所持数
     public int tacticalsCount = 0;           // 現在の所持数
     public Throwable.ThrowableType equippedTacticalType; // 装備中の種類
-    public GameObject smokeGrenadePrefab;    // スモーク弾のプレハブ
+    public GameObject SmokeGrenadePrefab;    // スモーク弾のプレハブ
 
-    /// Input: なし
-    /// Output: なし
-    /// Side Effects: Instanceに自身を登録し、重複があれば破棄します。
-    /// シングルトンパターンを実現するため、起動時にチェックを行います。
     private void Awake()
     {
+        // シングルトンの初期化処理
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
@@ -60,12 +59,19 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: なし
-    /// Output: なし
-    /// Side Effects: スロット切り替えや投擲処理が行われます。
-    /// プレイヤーの入力を即座に反映させるため、毎フレーム監視します。
+    private void Start()
+    {
+        // 最初のスロット（通常は1番武器）をアクティブに設定
+        activeWeaponSlot = weaponSlots[0];
+
+        // 投擲物の初期状態を「なし」に設定
+        equippedLethalType = Throwable.ThrowableType.None;
+        equippedTacticalType = Throwable.ThrowableType.None;
+    }
+
     private void Update()
     {
+        // スロットの有効/無効を更新（アクティブなスロットのみ表示）
         foreach (GameObject weaponSlot in weaponSlots)
         {
             if (weaponSlot == activeWeaponSlot)
@@ -74,9 +80,11 @@ public class WeaponManager : MonoBehaviour
                 weaponSlot.SetActive(false);
         }
 
+        // 数字キー 1 と 2 で武器スロットを切り替え
         if (Input.GetKeyDown(KeyCode.Alpha1)) SwitchActiveSlot(0);
         if (Input.GetKeyDown(KeyCode.Alpha2)) SwitchActiveSlot(1);
 
+        // GキーまたはTキーを押している間、投げる力を溜める
         if (Input.GetKey(KeyCode.G) || Input.GetKey(KeyCode.T))
         {
             forceMultiplier += Time.deltaTime;
@@ -84,42 +92,43 @@ public class WeaponManager : MonoBehaviour
                 forceMultiplier = forceMultiplierLimit;
         }
 
+        // Gキーを離した時にリーサル投擲物を投げる
         if (Input.GetKeyUp(KeyCode.G))
         {
             if (lethalsCount > 0) ThrowLethal();
-            forceMultiplier = 1; 
+            forceMultiplier = 1; // 倍率をリセット
         }
 
+        // Tキーを離した時にタクティカル投擲物を投げる
         if (Input.GetKeyUp(KeyCode.T))
         {
             if (tacticalsCount > 0) ThrowTactical();
-            forceMultiplier = 1; 
+            forceMultiplier = 1; // 倍率をリセット
         }
     }
 
-
-    /// Input: pickedupWeapon
-    /// Output: なし
-    /// Side Effects: スロットに武器が追加されます。
-    /// 取得した武器を適切に装備状態にするため、内部関数を呼び出します。
+    
+    /// 武器を拾った際のメイン処理
+   
     public void PickupWeapon(GameObject pickedupWeapon)
     {
         AddWeaponIntoActiveSlot(pickedupWeapon);
     }
 
    
-    /// Input: pickedupWeapon
-    /// Output: なし
-    /// Side Effects: 現在の武器が破棄され、新しい武器が設定されます。
-    /// インベントリの枠を管理するため、古い武器を捨てて新しい武器と入れ替えます。
+    /// 拾った武器を現在のアクティブなスロットに追加し、座標や回転を調整
+    
     private void AddWeaponIntoActiveSlot(GameObject pickedupWeapon)
     {
+        // すでに武器を持っている場合は捨てる
         DropCurrentWeapon(pickedupWeapon);
 
+        // 武器をスロットの子要素に設定
         pickedupWeapon.transform.SetParent(activeWeaponSlot.transform, false);
 
         Weapon weapon = pickedupWeapon.GetComponent<Weapon>();
 
+        // 武器固有の設定（位置、スケール、回転）を反映
         pickedupWeapon.transform.localPosition = new Vector3(weapon.spawnPosition.x, weapon.spawnPosition.y, weapon.spawnPosition.z);
         pickedupWeapon.transform.localScale = new Vector3(weapon.spawnScale.x, weapon.spawnScale.y, weapon.spawnScale.z);
         pickedupWeapon.transform.localRotation = Quaternion.Euler(weapon.spawnRotation.x, weapon.spawnRotation.y, weapon.spawnRotation.z);
@@ -128,10 +137,9 @@ public class WeaponManager : MonoBehaviour
         weapon.animator.enabled = true;
     }
 
-    /// Input: ammo (弾薬ボックス)
-    /// Output: なし
-    /// Side Effects: 対応する弾薬の総数が増加します。
-    /// 弾切れを防ぐため、拾った弾薬をリソースとして追加します。
+    
+    /// 弾薬箱を拾った際、種類に応じて総弾数を加算
+   
     internal void PickupAmmo(AmmoBox ammo)
     {
         switch (ammo.ammoType)
@@ -144,30 +152,27 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: item (通常アイテム)
-    /// Output: なし
-    /// Side Effects: totalItemが増加します。
-    /// プレイヤーの生存率を高めるため、拾ったアイテムを所持品に追加します。
+    
+    /// 一般アイテム（注射器など）を拾った際の処理
+   
     internal void PickupItem(Items item)
     {
         if (item.itemsType == Items.ItemsType.Syringe)
             totalItem += item.itemAmount;
     }
 
-    /// Input: item (回復アイテム)
-    /// Output: なし
-    /// Side Effects: totalItemが増加します。
-    /// 回復手段を提供するため、専用のアイテムを所持数に加算します。
+   
+    /// 回復アイテム（メディキットなど）を拾った際の処理（オーバーロード）
+    
     internal void PickupItem(HealItems item)
     {
         if (item.healitemsType == HealItems.HealItemsType.Medkit)
             totalItem += item.itemAmount;
     }
 
-    /// Input: pickedupWeapon
-    /// Output: なし
-    /// Side Effects: 現在の武器がフィールドにドロップされます。
-    /// 新しい武器を装備するスペースを確保するため、古い武器を手放します。
+   
+    /// 現在装備している武器を、新しく拾う武器があった場所に置く（交換処理）
+   
     private void DropCurrentWeapon(GameObject pickedupWeapon)
     {
         if (activeWeaponSlot.transform.childCount > 0)
@@ -177,16 +182,16 @@ public class WeaponManager : MonoBehaviour
             weaponToDrop.GetComponent<Weapon>().isActiveWeapon = false;
             weaponToDrop.GetComponent<Weapon>().animator.enabled = false;
 
+            // 拾った武器が置いてあった場所に、現在の武器を配置
             weaponToDrop.transform.SetParent(pickedupWeapon.transform.parent);
             weaponToDrop.transform.localPosition = pickedupWeapon.transform.localPosition;
             weaponToDrop.transform.localRotation = pickedupWeapon.transform.localRotation;
         }
     }
 
-    /// Input: slotNumber
-    /// Output: なし
-    /// Side Effects: アクティブな武器が切り替わります。
-    /// 状況に応じて適切な武器を使用できるようにするため、装備を切り替えます。
+   
+    /// スロットを切り替える際のロジック。旧武器を非アクティブにし、新武器をアクティブにする
+   
     public void SwitchActiveSlot(int slotNumber)
     {
         if (activeWeaponSlot.transform.childCount > 0)
@@ -204,10 +209,9 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: bulletsToDecrease, thisWeaponModel
-    /// Output: なし
-    /// Side Effects: 指定された武器の弾薬が減少します。
-    /// リロード時に消費した弾薬を正確に反映するため、総弾数から差し引きます。
+    
+    /// リロード等で弾薬を使用した際、総弾数から減算する
+    
     internal void DecreaseTotalAmmo(int bulletsToDecrease, Weapon.WeaponModel thisWeaponModel)
     {
         switch (thisWeaponModel)
@@ -220,9 +224,9 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: thisWeaponModel
-    /// Output: 残弾数 (int)
-    /// 武器ごとに適切なリロードを行えるよう、現在の残弾数を取得します。
+   
+    /// 特定の武器モデルに対応する現在の所持弾数を返す
+   
     public int CheckAmmoLeftFor(Weapon.WeaponModel thisWeaponModel)
     {
         switch (thisWeaponModel)
@@ -236,10 +240,9 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: throwable
-    /// Output: なし
-    /// Side Effects: 投擲物の種類に応じて取得処理を分岐します。
-    /// アイテムの性質に合わせた管理を行うため、種類別に振り分けます。
+    
+    /// 投擲アイテムを拾った際の分岐（リーサルかタクティカルか）
+   
     public void PickupThrowable(Throwable throwable)
     {
         switch (throwable.throwableType)
@@ -253,10 +256,9 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: tactical
-    /// Output: なし
-    /// Side Effects: タクティカル装備が更新されます。
-    /// 補助アイテムを上限内で管理するため、取得時にチェックと更新を行います。
+   
+    /// タクティカル投擲物を拾う処理。上限チェックとUI更新を行う
+    
     private void PickupThrowableAsTactical(Throwable.ThrowableType tactical)
     {
         if (equippedTacticalType == tactical || equippedTacticalType == Throwable.ThrowableType.None)
@@ -271,10 +273,8 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: lethal
-    /// Output: なし
-    /// Side Effects: レサール装備が更新されます。
-    /// 攻撃アイテムを上限内で管理するため、取得時にチェックと更新を行います。
+    /// リーサル投擲物を拾う処理。上限チェックとUI更新を行う
+   
     private void PickupThrowableAsLethal(Throwable.ThrowableType lethal)
     {
         if (equippedLethalType == lethal || equippedLethalType == Throwable.ThrowableType.None)
@@ -289,16 +289,16 @@ public class WeaponManager : MonoBehaviour
         }
     }
 
-    /// Input: なし
-    /// Output: なし
-    /// Side Effects: 投擲物が生成され、発射されます。
-    /// 敵にダメージを与えるため、殺傷用の投擲物をプレイヤーの視点方向に投げます。
+    
+    /// リーサル投擲物を生成し、カメラの前方方向へ力を加えて飛ばす
+   
     private void ThrowLethal()
     {
         GameObject lethalPrefab = GetThrowablePrefab(equippedLethalType);
         GameObject throwable = Instantiate(lethalPrefab, throwableSpawn.transform.position, Camera.main.transform.rotation);
         Rigidbody rb = throwable.GetComponent<Rigidbody>();
 
+        // 溜めた力（forceMultiplier）を乗せて発射
         rb.AddForce(Camera.main.transform.forward * (throwForce * forceMultiplier), ForceMode.VelocityChange);
 
         throwable.GetComponent<Throwable>().hasBeenThrown = true;
@@ -309,10 +309,9 @@ public class WeaponManager : MonoBehaviour
         HUBManager.Instance.UpdateThrowablesUI();
     }
 
-    /// Input: なし
-    /// Output: なし
-    /// Side Effects: タクティカル投擲物が生成され、発射されます。
-    /// 視界の遮断や戦況のコントロールのため、補助用の投擲物を投げます。
+   
+    /// タクティカル投擲物を生成し、飛ばす処理
+   
     private void ThrowTactical()
     {
         GameObject tacticalPrefab = GetThrowablePrefab(equippedTacticalType);
@@ -329,15 +328,15 @@ public class WeaponManager : MonoBehaviour
         HUBManager.Instance.UpdateThrowablesUI();
     }
 
-    /// Input: throwableType
-    /// Output: GameObject (対応するプレハブ)
-    /// 正しいオブジェクトを生成するため、種類に対応したプレハブを返します。
+   
+    /// 投擲物のタイプから対応するプレハブを返すユーティリティ
+   
     private GameObject GetThrowablePrefab(Throwable.ThrowableType throwableType)
     {
         switch (throwableType)
         {
             case Throwable.ThrowableType.Grenade: return grenadePrefab;
-            case Throwable.ThrowableType.Smoke_Grenade: return smokeGrenadePrefab;
+            case Throwable.ThrowableType.Smoke_Grenade: return SmokeGrenadePrefab;
             default: return new GameObject();
         }
     }

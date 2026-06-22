@@ -4,64 +4,56 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.AI;
 
-// 敵キャラクターのダメージ処理やステータスを管理し、ゲームの進行を円滑にするため
+/// 敵キャラクターのステータス、ダメージ処理、死亡、ドロップアイテムを制御するクラス
+
 public class Enemy : MonoBehaviour
 {
-    private const int DEATH_ANIM_MIN = 0;
-    private const int DEATH_ANIM_MAX = 2;
-    private const float ENEMY_DESTROY_DELAY = 6f;
-    private const int SCORE_REWARD = 10;
-    private const float BLIND_DURATION = 0.5f;
-    private const float ATTACK_RANGE = 2.5f;
-    private const float CHASE_START_RANGE = 18f;
-    private const float CHASE_STOP_RANGE = 8f;
-    private const float ITEM_DROP_Y_OFFSET = 1f;
-    private const float SCRIPT_DESTROY_DELAY = 9f;
+    [Header("コンポーネント参照")]
+    [SerializeField] private SphereCollider attackCollider; // 攻撃判定用のコライダー
+    [SerializeField] private GameObject enemy;           // 敵自身のオブジェクト参照
+    [SerializeField] private Slider hpSlider;            // HP表示用のUIスライダー
 
-    [Header("Components")]
-    [SerializeField] private SphereCollider attackCollider;
-    [SerializeField] private GameObject enemy;
-    [SerializeField] private Slider hpSlider;
+    [Header("ステータス")]
+    [SerializeField] private int MaxHP = 100;            // 最大体力
+    [SerializeField] private int HP = 100;               // 現在の体力
 
-    [Header("Status")]
-    [SerializeField] private int maxHp = 100;
-    [SerializeField] private int hp = 100;
+    [Header("外部クラス参照")]
+    public HitMarker hm;                                 // ヒットマーカー演出用
+    public Animator animator;                           // アニメーション制御用
+    public Throwable throwable;                         // 投擲物関連（必要に応じて使用）
+    public Quest quest;                                  // クエスト管理用
+    public GameObject[] ItemsDrop;                      // 死亡時にドロップするアイテム的配列
 
-    [Header("External References")]
-    public HitMarker hm;
-    public Animator animator;
-    public Throwable throwable;
-    public Quest quest;
-    public GameObject[] itemsDrop;
+    private NavMeshAgent navAgent;                      // 移動制御用（NavMesh）
+    private Transform player;                           // プレイヤーのTransform情報
 
-    private NavMeshAgent navAgent;
-    private Transform player;
+    public bool isDead;                                 // 死亡フラグ
 
-    public bool isDead;
+    private float blindTimer = 0f;                      // 目くらましタイマー
 
-    private float blindTimer = 0f;
-
-    private void Start()
+    void Start()
     {
+        // 各コンポーネントの取得と初期化
         animator = GetComponent<Animator>();
         navAgent = GetComponent<NavMeshAgent>();
-        hpSlider.value = 1f;
+        hpSlider.value = 1f; // HPバーを満タンにする
     }
 
-    // Input: damageAmount (受けるダメージ量)
-    // Output: なし
-    // Side Effects: HPを減少させ、0以下なら死亡処理へ移行する
+    
+    /// ダメージを受ける処理
+    
     public void TakeDamage(int damageAmount)
     {
-        // 既に死亡している場合は処理を中断し、二重に死亡判定されるのを防ぐため
-        if (hp <= 0) return;
+        // すでに死亡している場合は処理しない
+        if (HP <= 0) return;
 
-        hp -= damageAmount;
+        HP -= damageAmount;
 
-        if (hp <= 0)
+        // 体力が0以下になったら死亡処理
+        if (HP <= 0)
         {
-            // パターン化を防ぐため、ランダムに死亡アニメーションを選択する
-            int randomValue = Random.Range(DEATH_ANIM_MIN, DEATH_ANIM_MAX);
+            // 死亡アニメーションをランダムで2種類から選択
+            int randomValue = Random.Range(0, 2); // 0 または 1
 
             if (randomValue == 0)
             {
@@ -72,78 +64,81 @@ public class Enemy : MonoBehaviour
                 animator.SetTrigger("DIE2");
             }
 
+            // 当たり判定と攻撃判定を無効化
             DisableAttackCollider();
             DisableCapsuleCollider();
 
+            // アイテムドロップとオブジェクトの削除予約（6秒後）
             ItemDrop();
-            Destroy(enemy, ENEMY_DESTROY_DELAY);
+            Destroy(enemy, 6f);
 
             isDead = true;
 
-            // プレイヤーに報酬を与えるためスコアを加算する
+            // スコア加算処理
             if (isDead)
             {
-                Score.Instance.currentScore += SCORE_REWARD;
+                Score.Instance.currentScore += 10;
             }
 
-            // クエストの進行状況を更新するためプレイヤー側の参照を探す
+            // プレイヤーを探して、クエストの討伐カウントを更新する
             player = GameObject.FindGameObjectWithTag("Player").transform;
             if (this.isDead)
             {
                 player.GetComponent<PLAYER>().quest.goal.EnemyKilled();
             }
 
+            // 死亡時のSE再生
             SoundManager.Instance.zombieChannel2.PlayOneShot(SoundManager.Instance.zombieDeath);
         }
         else
         {
-            // 生存していることをプレイヤーに視覚的・聴覚的に伝えるため
+            // 生存している場合はダメージアニメーションとヒットマーカー表示
             animator.SetTrigger("DAMAGE");
             hm.getHitmarker();
 
+            // ダメージ時のSE再生
             SoundManager.Instance.zombieChannel2.PlayOneShot(SoundManager.Instance.zombieHurt);
         }
     }
 
-    // Input: なし
-    // Output: なし
-    // Side Effects: アニメーションを再生し、一定時間視界を奪う状態にする
+    
+    /// 目くらまし状態にする（スモーク弾などの演出用）
+    
     public void Blind()
     {
-        // スモーク弾等の効果で一定時間敵の行動を制限するため
-        blindTimer = BLIND_DURATION;
+        blindTimer = 0.5f; // keep blinded for 0.5s after leaving smoke
         animator.SetBool("isBlinding", true);
     }
 
-    // 開発時にエディタ上で敵の索敵や攻撃の範囲を視覚化し、調整しやすくするため
+   
+    /// インスペクター上で射程や検知範囲を視覚化するためのデバッグ表示
+    
     private void OnDrawGizmos()
     {
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, ATTACK_RANGE);
+        Gizmos.DrawWireSphere(transform.position, 2.5f); // 攻撃範囲
 
         Gizmos.color = Color.blue;
-        Gizmos.DrawWireSphere(transform.position, CHASE_START_RANGE);
+        Gizmos.DrawWireSphere(transform.position, 18f);  // 検知・追跡開始範囲
 
         Gizmos.color = Color.green;
-        Gizmos.DrawWireSphere(transform.position, CHASE_STOP_RANGE);
+        Gizmos.DrawWireSphere(transform.position, 8f);   // 追跡停止範囲
     }
 
-    private void Update()
+    void Update()
     {
-        // UI上で常に現在の体力を可視化するため
-        hpSlider.value = (float)hp / maxHp;
+        // HPバー（スライダー）の表示を更新
+        hpSlider.value = (float)HP / MaxHP;
 
-        // 回復アイテムなどで最大HPを超過しないよう制限をかけるため
-        if (hp > maxHp)
+        // HPが最大値を超えないように制限
+        if (HP > MaxHP)
         {
-            hp = maxHp;
+            HP = MaxHP;
         }
 
         if (blindTimer > 0)
         {
             blindTimer -= Time.deltaTime;
-            
-            // 時間経過で盲目状態を解除し、再び行動可能にするため
             if (blindTimer <= 0)
             {
                 animator.SetBool("isBlinding", false);
@@ -151,24 +146,22 @@ public class Enemy : MonoBehaviour
         }
     }
 
-    // Input: なし
-    // Output: なし
-    // Side Effects: 攻撃用コライダーを無効化する
+   
+    /// 攻撃用の判定（コライダー）を無効化する
+   
     public void DisableAttackCollider()
     {
-        // 死亡後や被ダメージ中に攻撃判定が残り続けるのを防ぐため
         if (this.attackCollider != null)
         {
             this.attackCollider.enabled = false;
         }
     }
 
-    // Input: なし
-    // Output: なし
-    // Side Effects: カプセルコライダーを無効化する
+    
+    /// 自身の当たり判定（カプセルコライダー）を無効化する
+    
     public void DisableCapsuleCollider()
     {
-        // 死亡した敵にプレイヤーが引っかかったり、不要な物理演算が起きるのを防ぐため
         CapsuleCollider capsuleCollider = GetComponent<CapsuleCollider>();
         if (capsuleCollider != null)
         {
@@ -176,18 +169,17 @@ public class Enemy : MonoBehaviour
         }
     }
 
-    // Input: なし
-    // Output: なし
-    // Side Effects: ドロップアイテムを生成し、数秒後にこのスクリプトを破棄する
+    
+    /// 設定されたアイテムを生成してドロップさせる
+    
     private void ItemDrop()
     {
-        for (int i = 0; i < itemsDrop.Length; i++)
+        for (int i = 0; i < ItemsDrop.Length; i++)
         {
-            // 地面に埋まらないようにY軸を少しずらしてアイテムを生成するため
-            Instantiate(itemsDrop[i], transform.position + new Vector3(0, ITEM_DROP_Y_OFFSET, 0), Quaternion.identity);
-            
-            // ドロップ後に不要になったスクリプトを破棄してメモリを解放するため
-            Destroy(this, SCRIPT_DESTROY_DELAY);
+            // 少し上に浮かせた位置にアイテムを生成
+            Instantiate(ItemsDrop[i], transform.position + new Vector3(0, 1, 0), Quaternion.identity);
+            // 自身を削除予約（9秒後）
+            Destroy(this, 9f);
         }
     }
 }

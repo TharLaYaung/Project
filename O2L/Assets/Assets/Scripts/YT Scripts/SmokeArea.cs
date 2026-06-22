@@ -1,22 +1,17 @@
 using UnityEngine;
 
-// 煙による視界不良を再現するため、範囲内の敵にブラインド効果を与える
 public class SmokeArea : MonoBehaviour
 {
-    private const float DEFAULT_RADIUS = 5f;
-    private const float DEFAULT_DURATION = 10f;
+    public float radius = 5f;
+    public float duration = 10f;
 
-    public float radius = DEFAULT_RADIUS;
-    public float duration = DEFAULT_DURATION;
-
-    // Input: なし, Output: なし, Side Effects: スクリプトとオブジェクトが指定時間後に破棄されるようスケジュールする
-    private void Start()
+    void Start()
     {
+        // Ensure the smoke area script doesn't run forever if the visual effect isn't destroyed
         Destroy(gameObject, duration);
     }
 
-    // Input: なし, Output: なし, Side Effects: 範囲内のEnemyコンポーネントを持つオブジェクトにブラインド処理を実行する
-    private void Update()
+    void Update()
     {
         Collider[] colliders = Physics.OverlapSphere(transform.position, radius);
         foreach (Collider objectInRange in colliders)

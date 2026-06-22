@@ -4,63 +4,61 @@ using UnityEngine;
 using UnityEngine.AI;
 
 
-/// 一定範囲を自律的に移動し、プレイヤーを索敵します。
+/// ゾンビの巡回状態（AnimatorのPatrolステート）を管理するクラス
+/// ウェイポイント（移動目標地点）をランダムに巡り、プレイヤーを検知すると追跡に移行します
 
 public class ZombiePatrolingState : StateMachineBehaviour
 {
-    // 巡回時間を計測し、一定時間で待機状態へ戻すためのタイマーです。
-    private float timer;
+    // 巡回時間を計測するためのタイマー
+    float timer;
 
-    // 巡回を終えるまでの時間（初期値10秒）。
+    // 巡回を続ける時間の長さ（デフォルト10秒）
     public float patrolingTime = 10f;
 
-    // プレイヤーの位置を追跡するため、座標情報を保持します。
-    private Transform player;
+    // プレイヤーの座標情報
+    Transform player;
 
-    // 自律移動を行うため、NavMeshAgentを保持します。
-    private NavMeshAgent agent;
+    // ナビゲーション（自動移動）を制御するエージェント
+    NavMeshAgent agent;
 
-    // プレイヤーを検知する距離。
+    // プレイヤーを検知する範囲の半径
     public float detectionArea = 18f;
 
-    // 巡回中の移動速度。
+    // 巡回時の移動速度
     public float patrolSpeed = 2f;
 
-    // 巡回ルートをランダムに決定するため、ウェイポイントのリストを保持します。
-    private List<Transform> waypointsList = new List<Transform>();
+    // 巡回地点（ウェイポイント）を格納するリスト
+    List<Transform> waypointsList = new List<Transform>();
 
     
-    /// Input: animator, stateInfo, layerIndex
-    /// Output: なし
-    /// Side Effects: agentの設定と最初の移動先が決定されます。
-    /// 巡回を開始するため、必要なコンポーネントを取得し、ランダムな目的地を設定します。
+    /// 巡回状態に入った瞬間に一度だけ呼ばれる（初期化処理）
   
     override public void OnStateEnter(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
     {
-        // プレイヤーをタグで検索して取得
+        // プレイヤーをタグで検索して参照を取得
         player = GameObject.FindGameObjectWithTag("Player").transform;
 
         // アニメーターが付いているオブジェクトからNavMeshAgentを取得
         agent = animator.GetComponent<NavMeshAgent>();
 
-        // エージェントの速度を巡回速度に設定し、タイマーをリセット
+        // エージェントの速度を巡回用に設定し、タイマーをリセット
         agent.speed = patrolSpeed;
         timer = 0;
 
         // ---- 最初の巡回地点への移動開始 ---- //
 
-        // エージェントのウェイポイントをタグで検索
+        // ウェイポイントの親オブジェクトをタグで検索
         GameObject waypointCluster = GameObject.FindGameObjectWithTag("Waypoints");
 
-        // ウェイポイントの子供（各地点）をリストに全て格納
+        // 親オブジェクトの子要素（各地点）をリストにすべて追加
         foreach (Transform t in waypointCluster.transform)
         {
             waypointsList.Add(t);
         }
 
-        // リストの中からランダムに一点を選び、移動先に設定
+        // リストの中からランダムに一つ地点を選び、移動目標に設定
         Vector3 nextPosition = waypointsList[Random.Range(0, waypointsList.Count)].position;
-        // エラー回避：NavMesh上にある場合のみ目的地を設定
+        // エラー防止：NavMesh上にいる場合のみ目的地を設定する
         if (agent.isOnNavMesh)
         {
             agent.SetDestination(nextPosition);
@@ -68,44 +66,41 @@ public class ZombiePatrolingState : StateMachineBehaviour
     }
 
     
-    /// Input: animator, stateInfo, layerIndex
-    /// Output: なし
-    /// Side Effects: 巡回ルートの更新、音声再生、および状態遷移が行われます。
-    /// 周囲の状況変化（目的地到着、時間経過、プレイヤー検知）に即座に対応します。
+    /// 巡回状態の間、毎フレーム呼ばれる
   
     override public void OnStateUpdate(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
     {
-        // ---- ゾンビの足音再生処理 ---- //
+        // ---- ゾンビの環境音（足音など）の再生 ---- //
         if (SoundManager.Instance.zombieChannel.isPlaying == false)
         {
             SoundManager.Instance.zombieChannel.clip = SoundManager.Instance.zombieWalking;
-            // 遅延再生
+            // 少し遅らせて再生（足音の重なり防止など）
             SoundManager.Instance.zombieChannel.PlayDelayed(1f);
         }
 
-        // ---- エージェントへの到達確認と次の地点への移動 ---- //
+        // ---- ウェイポイントへの到着確認と次の地点への移動 ---- //
 
-        // 目的地までの距離が、停止範囲以下になった場合（到達した場合）
-        // エラー回避：NavMesh上にあるかどうかを確認
+        // 目的地までの残り距離が、停止距離以下になった（到着した）場合
+        // エラー防止：NavMesh上にいるかどうかも確認する
         if (agent.isOnNavMesh && agent.remainingDistance <= agent.stoppingDistance)
         {
-            // 次のランダムな地点を選んで移動開始
+            // 次のランダムな地点を選択して移動開始
             var random = Random.Range(0, waypointsList.Count);
             var pos = waypointsList[random].position;
             agent.SetDestination(pos);
         }
 
-        // ---- 待機状態(Idle State)への遷移判定 ---- //
+        // ---- 待機状態（Idle State）への遷移判定 ---- //
 
         // 巡回時間を加算
         timer += Time.deltaTime;
-        // 一定時間巡回を終えたら待機状態へ戻す
+        // 一定時間巡回を続けたら待機状態に戻る
         if (timer > patrolingTime)
         {
             animator.SetBool("isPatroling", false);
         }
 
-        // ---- 追跡状態(Chase State)への遷移判定 ---- //
+        // ---- 追跡状態（Chase State）への遷移判定 ---- //
 
         // プレイヤーとの距離を計算
         float distanceFromPlayer = Vector3.Distance(player.position, animator.transform.position);
@@ -113,23 +108,24 @@ public class ZombiePatrolingState : StateMachineBehaviour
         // プレイヤーが検知範囲内に入った場合
         if (distanceFromPlayer < detectionArea)
         {
-            // 追跡フラグを立てて遷移
+            // 追跡フラグを立てて遷移させる
             animator.SetBool("isChasing", true);
         }
     }
 
     
-    /// Input: animator, stateInfo, layerIndex
-    /// Output: なし
-    /// Side Effects: agentの移動と音声が停止します。
-    /// 意図しない挙動を防ぐため、状態遷移時に初期化状態へ戻します。
+    /// 巡回状態から別の状態へ移る直前に呼ばれる
+    
     override public void OnStateExit(Animator animator, AnimatorStateInfo stateInfo, int layerIndex)
     {
+        // エージェントをその場に停止させる（現在地を目的地に設定）
+        // エラー防止：NavMesh上にいる場合のみ目的地を設定する
         if (agent.isOnNavMesh)
         {
             agent.SetDestination(agent.transform.position);
         }
 
+        // 巡回時の音声を停止
         SoundManager.Instance.zombieChannel.Stop();
     }
 }

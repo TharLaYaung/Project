@@ -1,83 +1,111 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-// 繝励Ξ繧､繝､繝ｼ縺ｮ隕也せ繧定・辟ｶ縺ｫ霑ｽ蠕薙＆縺帙ｋ縺溘ａ縲√き繝｡繝ｩ縺ｮ謖吝虚繧貞宛蠕｡縺吶ｋ
+
+/// カメラの回転（視点操作）とプレイヤーへの追従を管理するクラス
+/// マウス入力に基づいた回転と、カメラシェイク機能を提供します
+
 public class Cameracontroller : MonoBehaviour
 {
-    private const float MIN_PITCH = -90f;
-    private const float MAX_PITCH = 90f;
-    private const string PREF_SENSITIVITY = "Sensitivity";
-    private const string PREF_SMOOTH_SPEED = "SmoothSpeed";
-    private const float DEFAULT_SENSITIVITY = 2f;
-    private const float DEFAULT_SMOOTH_SPEED = 10f;
-    private const float SHAKE_DURATION = 0.15f;
-    private const float SHAKE_MAGNITUDE = 0.4f;
+    // --- 変数宣言 ---
 
+    // 追従対象となるプレイヤーのゲームオブジェクト
     [SerializeField] private GameObject player;
+
+    // インスペクターから調整可能なマウス感度設定
     [SerializeField] private Vector2 sensitivity;
 
+    // 水平方向（左右）の回転角を保持する変数
     private float horizontalAngle;
+
+    // 前フレームのプレイヤー位置を記録し、移動量を計算するための変数
     private Vector3 targetPosition;
+
+    // カメラ自身のTransformコンポーネントへの参照
     private Transform cameraTransform;
 
+    // マウス感度（複数の感度変数が定義されていますが、現在は下のspeedH/Vが主に使用されています）
     [SerializeField] public float mouseSensitivity = 2f;
-    public float speedV = 2.0f;
-    public float speedH = 2.0f;
+    public float speedV = 2.0f; // 垂直方向の回転速度
+    public float speedH = 2.0f; // 水平方向の回転速度
 
-    private float xRotation = 0f;
-    private float yRotation = 0f;
+    // 現在の累積回転角
+    private float xRotation = 0f; // 上下（ピッチ）
+    private float yRotation = 0f; // 左右（ヨー）
     private float currentXRotation = 0f;
     private float currentYRotation = 0f;
 
+    // カメラを揺らす演出（Camerashakeスクリプト）への参照
     public Camerashake camerashake;
 
-    // 隕也阜螟悶・UI謫堺ｽ懊ｒ髦ｲ豁｢縺吶ｋ縺溘ａ縲√き繝ｼ繧ｽ繝ｫ繧偵Ο繝・け縺吶ｋ
+
+   
+    /// 初期化処理
+   
     void Start()
     {
+        // マウスカーソルを非表示にし、画面中央に固定（FPSなどで一般的）
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
 
+        // 初期位置をターゲット位置として記録
         this.targetPosition = this.player.transform.localPosition;
         
         currentXRotation = xRotation;
         currentYRotation = yRotation;
     }
 
-    // 蜈･蜉帙↓蝓ｺ縺･縺阪き繝｡繝ｩ縺ｮ隗貞ｺｦ繧呈峩譁ｰ縺吶ｋ
+    
+    /// フレームごとの更新（入力処理と回転）
+    
     void Update()
     {
-        // UI謫堺ｽ應ｸｭ縺ｫ繧ｫ繝｡繝ｩ縺悟虚縺九↑縺・ｈ縺・↓縺吶ｋ
+        // ポーズメニューが開いていない場合のみカメラ操作を許可
         if (!PauseMenu.instance.isPaused)
         {
-            float currentSensitivity = PlayerPrefs.GetFloat(PREF_SENSITIVITY, DEFAULT_SENSITIVITY);
-            float smoothSpeed = PlayerPrefs.GetFloat(PREF_SMOOTH_SPEED, DEFAULT_SMOOTH_SPEED);
+            float sensitivity = PlayerPrefs.GetFloat("Sensitivity", 2f);
+            float smoothSpeed = PlayerPrefs.GetFloat("SmoothSpeed", 10f);
 
-            xRotation -= currentSensitivity * Input.GetAxisRaw("Mouse Y");
-            yRotation += currentSensitivity * Input.GetAxisRaw("Mouse X");
+            // マウスの移動量を取得し、回転角に加算
+            // GetAxisRaw("Mouse Y") は上下、"Mouse X" は左右の動き
+            xRotation -= sensitivity * Input.GetAxisRaw("Mouse Y");
+            yRotation += sensitivity * Input.GetAxisRaw("Mouse X");
 
-            // 隕也せ縺瑚｣剰ｿ斐▲縺ｦ謫堺ｽ應ｸ崎・縺ｫ縺ｪ繧九・繧帝亟縺舌◆繧√∽ｸ贋ｸ九・蝗櫁ｻ｢繧貞宛髯舌☆繧・
-            xRotation = Mathf.Clamp(xRotation, MIN_PITCH, MAX_PITCH);
+            // 上下の回転角度を制限（真上や真後ろを向いて画面が反転するのを防ぐ）
+            xRotation = Mathf.Clamp(xRotation, -90f, 90f);
 
             currentXRotation = xRotation;
             currentYRotation = yRotation;
 
+            // 計算した回転角をカメラの角度（Euler角）に適用
             transform.eulerAngles = new Vector3(currentXRotation, currentYRotation, 0f);
         }
     }
 
-    // 繝励Ξ繧､繝､繝ｼ縺ｮ遘ｻ蜍募・逅・′螳御ｺ・＠縺溷ｾ後↓繧ｫ繝｡繝ｩ繧定ｿｽ蠕薙＆縺帙ｋ縺溘ａ縲´ateUpdate繧剃ｽｿ逕ｨ縺吶ｋ
+    
+    /// 全てのUpdateが完了した後に呼ばれる更新処理
+    /// プレイヤーの移動にカメラを同期させます
+    
     private void LateUpdate()
     {
+        // プレイヤーの今フレームの移動量を計算し、カメラの位置に加算する（追従）
+        // (現在の位置 - 前フレームの位置) = 移動した距離
         this.transform.localPosition += this.player.transform.localPosition - this.targetPosition;
+
+        // 次のフレームのために現在の位置を保存
         this.targetPosition = this.player.transform.localPosition;
 
+        // プレイヤーの位置を軸にして、水平方向に回転させる（三人称視点などの場合に利用）
         this.transform.RotateAround(this.player.transform.localPosition, Vector3.up, this.horizontalAngle);
     }
 
-    // 陲ｫ蠑ｾ繧・匱遐ｲ譎ゅ・陦晄茶繧定ｦ冶ｦ夂噪縺ｫ莨昴∴繧九◆繧√√き繝｡繝ｩ繧呈昭繧峨☆
+    
+    /// 外部（武器の発砲時など）から呼び出してカメラを揺らす関数
+    
     public void CameraShake()
     {
-        StartCoroutine(camerashake.Shake(SHAKE_DURATION, SHAKE_MAGNITUDE));
+        // Camerashakeスクリプトのコルーチンを呼び出す（持続時間 0.15秒、強さ 0.4）
+        StartCoroutine(camerashake.Shake(0.15f, 0.4f));
     }
 }
